@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Combined/BBox 最近匹配查看器</title>
+<title>LaViRA Viewer</title>
 <style>
   :root {
     --bg: #0f1115;
@@ -56,27 +56,27 @@
 <body>
 <div class="app">
   <header>
-    <h1>Combined/BBox 最近匹配查看器</h1>
+    <h1>LaViRA Viewer</h1>
     <div class="controls">
-      <button id="prevBtn" title="上一张 [←]">⟨</button>
-      <button id="playBtn" title="播放/暂停 [Space]">▶</button>
-      <button id="nextBtn" title="下一张 [→]">⟩</button>
-      <label class="range">速度
+      <button id="prevBtn" title="Previous [←]">⟨</button>
+      <button id="playBtn" title="Play/Pause [Space]">▶</button>
+      <button id="nextBtn" title="Next [→]">⟩</button>
+      <label class="range">Speed
         <input id="fps" type="range" min="1" max="60" step="1" value="10">
         <span id="fpsLabel">10 fps</span>
       </label>
-      <label><input id="loop" type="checkbox" checked> 循环 [L]</label>
-      <select id="fitMode" title="适配模式">
-        <option value="contain" selected>适配窗口</option>
-        <option value="cover">铺满裁切</option>
-        <option value="native">原始像素</option>
+      <label><input id="loop" type="checkbox" checked> Loop [L]</label>
+      <select id="fitMode" title="Fit Mode">
+        <option value="contain" selected>Fit Window</option>
+        <option value="cover">Cover Crop</option>
+        <option value="native">Native Pixels</option>
       </select>
     </div>
     <div class="spacer"></div>
   </header>
 
   <aside class="sidebar">
-    <div class="group-title">子目录（saved_rgb_images/）</div>
+    <div class="group-title">Subdirectories (saved_rgb_images/)</div>
     <ul class="folders" id="folderList"></ul>
   </aside>
 
@@ -85,7 +85,7 @@
       <img id="combinedImg" alt="combined frame" />
     </div>
     <div class="footer">
-      <div id="combinedInfo">未加载</div>
+      <div id="combinedInfo">Not loaded</div>
       <div class="status" id="combinedStatus">0 / 0</div>
     </div>
   </section>
@@ -95,7 +95,7 @@
       <img id="bboxImg" alt="bbox frame" />
     </div>
     <div class="footer">
-      <div id="bboxInfo">未加载</div>
+      <div id="bboxInfo">Not loaded</div>
       <div class="status" id="bboxStatus"></div>
     </div>
   </section>
@@ -103,7 +103,7 @@
 
 <script>
 (() => {
-  const ROOT = 'saved_rgb_images3';
+  const ROOT = 'saved_rgb_images';
   const combinedRe = /^combined_step(\d+)\.(png|jpg|jpeg|webp|bmp)$/i;
   const bboxRe = /^bbox_step(\d+)\.(png|jpg|jpeg|webp|bmp)$/i;
 
@@ -127,7 +127,7 @@
   let folders = [];
   let combined = []; // [{step, url}]
   let bboxMap = new Map(); // step -> url
-  let bboxStepsSorted = []; // 升序数组
+  let bboxStepsSorted = []; // ascending array
   let idx = 0;
   let playing = false;
   let timer = null;
@@ -140,14 +140,14 @@
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => { cacheImg.set(url, img); resolve(img); };
-      img.onerror = () => reject(new Error('加载失败: ' + url));
+      img.onerror = () => reject(new Error('Load failed: ' + url));
       img.src = url;
     });
   }
 
   async function listDirectory(path) {
     const res = await fetch(path);
-    if (!res.ok) throw new Error('无法访问目录：' + path);
+    if (!res.ok) throw new Error('Cannot access directory: ' + path);
     const html = await res.text();
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const links = [...doc.querySelectorAll('a')].map(a => a.getAttribute('href')).filter(Boolean);
@@ -181,7 +181,7 @@
       });
     renderFolderList();
     if (folders.length) selectFolder(folders[0]);
-    else folderList.innerHTML = '<li>未找到子目录</li>';
+    else folderList.innerHTML = '<li>No subdirectories found</li>';
   }
 
   function renderFolderList() {
@@ -207,7 +207,7 @@
 
   async function selectFolder(name) {
     highlightActiveFolder(name);
-    combinedInfo.textContent = `加载 ${name}...`;
+    combinedInfo.textContent = `Loading ${name}...`;
     bboxInfo.textContent = '';
     combined = []; bboxMap = new Map(); bboxStepsSorted = []; idx = 0; stop();
     try {
@@ -218,7 +218,7 @@
       bboxMap = bMap;
       bboxStepsSorted = bSteps;
 
-      // 更新计数
+      // update count badges
       [...folderList.children].forEach(li => {
         if (li.firstChild.nodeValue === name) {
           li.querySelector('.badge').textContent = `${combined.length}C / ${bboxMap.size}B`;
@@ -226,18 +226,18 @@
       });
 
       if (!combined.length) {
-        combinedInfo.textContent = `目录 ${name} 中没有 combined_stepXXXX.*`;
+        combinedInfo.textContent = `No combined_stepXXXX.* found in directory ${name}`;
         combinedStatus.textContent = '0 / 0';
         combinedImg.removeAttribute('src');
         bboxImg.removeAttribute('src');
-        bboxInfo.textContent = '无 bbox';
+        bboxInfo.textContent = 'No bbox';
         bboxStatus.textContent = '';
       } else {
         show(0);
       }
     } catch (e) {
       console.error(e);
-      combinedInfo.textContent = `读取失败：${e.message}`;
+      combinedInfo.textContent = `Read failed: ${e.message}`;
       combinedImg.removeAttribute('src');
       bboxImg.removeAttribute('src');
       bboxInfo.textContent = '';
@@ -265,7 +265,7 @@
     }
   }
 
-  // 二分查找：在已排序的 bboxStepsSorted 中找到 <= step 的最大元素
+  // Binary search: find largest element <= step in sorted bboxStepsSorted
   function findLeStep(step) {
     const arr = bboxStepsSorted;
     let lo = 0, hi = arr.length - 1, ans = -1;
@@ -274,7 +274,7 @@
       if (arr[mid] <= step) { ans = arr[mid]; lo = mid + 1; }
       else { hi = mid - 1; }
     }
-    return ans; // -1 代表没有 <= step 的 bbox
+    return ans; // -1 means no bbox with step <= given step
   }
 
   async function show(i) {
@@ -289,7 +289,7 @@
       combinedImg.src = cimg.src;
       combinedInfo.textContent = `${decodeURIComponent(url)} (step ${step})`;
       combinedStatus.textContent = `${idx + 1} / ${combined.length}`;
-      // 预取下一张 combined
+      // prefetch next combined frame
       const nextIdx = (idx + 1) % combined.length;
       if (nextIdx !== idx) {
         const nurl = combined[nextIdx].url;
@@ -301,7 +301,7 @@
       combinedStatus.textContent = `${idx + 1} / ${combined.length}`;
     }
 
-    // BBox：优先同 step；否则回退到 <= step 的最近 step
+    // BBox: prefer exact step match; otherwise fall back to nearest step <= current step
     let bstep = step;
     let burl = bboxMap.get(bstep);
     if (!burl) {
@@ -314,24 +314,24 @@
         applyFitMode(bboxImg, bimg);
         bboxImg.src = bimg.src;
         if (bstep === step) {
-          bboxInfo.textContent = `${decodeURIComponent(burl)} (匹配 step ${step})`;
+          bboxInfo.textContent = `${decodeURIComponent(burl)} (matched step ${step})`;
         } else {
-          bboxInfo.textContent = `${decodeURIComponent(burl)} (回退至 step ${bstep})`;
+          bboxInfo.textContent = `${decodeURIComponent(burl)} (fallback to step ${bstep})`;
         }
         bboxStatus.textContent = `${bimg.naturalWidth}×${bimg.naturalHeight}`;
-        // 预取下一帧 bbox（按同样规则）
+        // prefetch next bbox frame using same matching logic
         const nextStep = combined[(idx + 1) % combined.length].step;
         const nextBstep = bboxMap.has(nextStep) ? nextStep : findLeStep(nextStep);
         const nburl = nextBstep >= 0 ? bboxMap.get(nextBstep) : undefined;
         if (nburl && !cacheImg.has(nburl)) loadImage(nburl).catch(()=>{});
       } catch (e) {
         bboxImg.removeAttribute('src');
-        bboxInfo.textContent = `加载 bbox 失败：${e.message}`;
+        bboxInfo.textContent = `Failed to load bbox: ${e.message}`;
         bboxStatus.textContent = '';
       }
     } else {
       bboxImg.removeAttribute('src');
-      bboxInfo.textContent = `step ${step} 之前无可用 bbox`;
+      bboxInfo.textContent = `No bbox available before step ${step}`;
       bboxStatus.textContent = '';
     }
   }
@@ -370,16 +370,10 @@
   loopChk.addEventListener('change', () => {});
   fitModeSel.addEventListener('change', () => {
     fitMode = fitModeSel.value;
-    // 立即应用到当前两侧图像
     const cur = combined[idx];
     if (cur) {
       const cimg = cacheImg.get(cur.url);
       if (cimg) applyFitMode(combinedImg, cimg);
-      // 右侧按当前显示的图重新应用
-      if (bboxImg.src) {
-        // 尝试从缓存取当前 src 对应对象（不一定有）
-        // 若无则忽略，因为样式已设置到元素
-      }
     }
   });
 

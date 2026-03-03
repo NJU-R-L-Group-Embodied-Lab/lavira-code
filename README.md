@@ -214,6 +214,18 @@ bash eval_scripts/r2r.sh
 
 On a server equipped with an NVIDIA RTX 4090 GPU using 20 parallel processes, evaluation on the OpenNav-100 episodes completes in approximately 30 minutes.
 
+## Simple Visualization
+Set in[`lavira_main.py` Line 463](https://github.com/NJU-R-L-Group-Embodied-Lab/lavira-code/blob/main/vlnce_baselines/lavira_main.py#L463)：
+
+```python
+self.visualize = True
+```
+After finishing evaluation, run 
+```python
+python server.py
+```
+The website will run on http://0.0.0.0:9999 by default.
+
 ## Credits
 If you find this work useful, please cite our paper:
 
