@@ -1,0 +1,8 @@
+data
+logs/
+output/
+__pycache__
+saved_rgb_images/
+*rgb*
+scripts
+.idea

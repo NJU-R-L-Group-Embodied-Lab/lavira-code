@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Combined/BBox 最近匹配查看器</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --fg: #e6e9ef;
+    --muted: #9aa3af;
+    --panel: #171a21;
+    --border: #2a2f3a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft Yahei", sans-serif; }
+  .app { display: grid; grid-template-columns: 240px 1fr 1fr; grid-template-rows: auto 1fr; height: 100%; min-height: 0; }
+  header { grid-column: 1 / -1; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  button, select, input[type="range"] { background: #202532; color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+  button:hover { border-color: #3a4252; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .sidebar { border-right: 1px solid var(--border); background: #12151c; overflow: auto; min-height: 0; }
+  .group-title { padding: 10px 12px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .folders { list-style: none; margin: 0; padding: 0; }
+  .folders li { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: center; justify-content: space-between; }
+  .folders li:hover { background: rgba(255,255,255,0.05); }
+  .folders li.active { background: rgba(90,169,255,0.18); color: white; }
+  .folders .badge { font-size: 12px; color: var(--muted); }
+
+  .pane { position: relative; height: 100%; display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+  .img-wrap { position: relative; width: 100%; height: 100%; background: #0b0d12; display: grid; place-items: center; overflow: hidden; }
+  .img-wrap img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }
+  .footer { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center; gap: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .status { color: var(--muted); }
+  .spacer { flex: 1; }
+  .range { display: flex; align-items: center; gap: 6px; }
+  input[type="range"] { width: 160px; }
+
+  @media (max-width: 1080px) {
+    .app { grid-template-columns: 220px 1fr; grid-template-rows: auto 1fr 1fr; }
+    .pane.bbox { grid-column: 1 / -1; }
+  }
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr 1fr; }
+    .sidebar { grid-row: 2; height: 180px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Combined/BBox 最近匹配查看器</h1>
+    <div class="controls">
+      <button id="prevBtn" title="上一张 [←]">⟨</button>
+      <button id="playBtn" title="播放/暂停 [Space]">▶</button>
+      <button id="nextBtn" title="下一张 [→]">⟩</button>
+      <label class="range">速度
+        <input id="fps" type="range" min="1" max="60" step="1" value="10">
+        <span id="fpsLabel">10 fps</span>
+      </label>
+      <label><input id="loop" type="checkbox" checked> 循环 [L]</label>
+      <select id="fitMode" title="适配模式">
+        <option value="contain" selected>适配窗口</option>
+        <option value="cover">铺满裁切</option>
+        <option value="native">原始像素</option>
+      </select>
+    </div>
+    <div class="spacer"></div>
+  </header>
+
+  <aside class="sidebar">
+    <div class="group-title">子目录（saved_rgb_images/）</div>
+    <ul class="folders" id="folderList"></ul>
+  </aside>
+
+  <section class="pane combined">
+    <div class="img-wrap">
+      <img id="combinedImg" alt="combined frame" />
+    </div>
+    <div class="footer">
+      <div id="combinedInfo">未加载</div>
+      <div class="status" id="combinedStatus">0 / 0</div>
+    </div>
+  </section>
+
+  <section class="pane bbox">
+    <div class="img-wrap">
+      <img id="bboxImg" alt="bbox frame" />
+    </div>
+    <div class="footer">
+      <div id="bboxInfo">未加载</div>
+      <div class="status" id="bboxStatus"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const ROOT = 'saved_rgb_images3';
+  const combinedRe = /^combined_step(\d+)\.(png|jpg|jpeg|webp|bmp)$/i;
+  const bboxRe = /^bbox_step(\d+)\.(png|jpg|jpeg|webp|bmp)$/i;
+
+  // DOM
+  const folderList = document.getElementById('folderList');
+  const combinedImg = document.getElementById('combinedImg');
+  const bboxImg = document.getElementById('bboxImg');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const playBtn = document.getElementById('playBtn');
+  const fpsInput = document.getElementById('fps');
+  const fpsLabel = document.getElementById('fpsLabel');
+  const loopChk = document.getElementById('loop');
+  const fitModeSel = document.getElementById('fitMode');
+  const combinedInfo = document.getElementById('combinedInfo');
+  const combinedStatus = document.getElementById('combinedStatus');
+  const bboxInfo = document.getElementById('bboxInfo');
+  const bboxStatus = document.getElementById('bboxStatus');
+
+  // State
+  let folders = [];
+  let combined = []; // [{step, url}]
+  let bboxMap = new Map(); // step -> url
+  let bboxStepsSorted = []; // 升序数组
+  let idx = 0;
+  let playing = false;
+  let timer = null;
+  let fitMode = 'contain';
+
+  // image cache
+  const cacheImg = new Map();
+  function loadImage(url) {
+    if (cacheImg.has(url)) return Promise.resolve(cacheImg.get(url));
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => { cacheImg.set(url, img); resolve(img); };
+      img.onerror = () => reject(new Error('加载失败: ' + url));
+      img.src = url;
+    });
+  }
+
+  async function listDirectory(path) {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error('无法访问目录：' + path);
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const links = [...doc.querySelectorAll('a')].map(a => a.getAttribute('href')).filter(Boolean);
+    return links;
+  }
+
+  function parseFiles(links, base) {
+    const files = links.filter(h => h !== '../' && !h.endsWith('/'));
+    const cList = [];
+    const bMap = new Map();
+    for (const f of files) {
+      const mC = f.match(combinedRe);
+      if (mC) { cList.push({ step: Number(mC[1]), url: `${base}/${f}` }); continue; }
+      const mB = f.match(bboxRe);
+      if (mB) { bMap.set(Number(mB[1]), `${base}/${f}`); continue; }
+    }
+    cList.sort((a,b) => a.step - b.step);
+    const bSteps = Array.from(bMap.keys()).sort((a,b) => a - b);
+    return { cList, bMap, bSteps };
+  }
+
+  async function scanFolders() {
+    const links = await listDirectory(`${ROOT}/`);
+    folders = links
+      .filter(h => h !== '../' && h.endsWith('/'))
+      .map(h => h.replace(/\/$/, ''))
+      .sort((a,b) => {
+        const na = Number(a), nb = Number(b);
+        if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    renderFolderList();
+    if (folders.length) selectFolder(folders[0]);
+    else folderList.innerHTML = '<li>未找到子目录</li>';
+  }
+
+  function renderFolderList() {
+    folderList.innerHTML = '';
+    folders.forEach(name => {
+      const li = document.createElement('li');
+      li.textContent = name;
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = '';
+      li.appendChild(badge);
+      li.addEventListener('click', () => selectFolder(name));
+      folderList.appendChild(li);
+    });
+    highlightActiveFolder();
+  }
+
+  function highlightActiveFolder(active) {
+    [...folderList.children].forEach(li => {
+      li.classList.toggle('active', li.firstChild.nodeValue === active);
+    });
+  }
+
+  async function selectFolder(name) {
+    highlightActiveFolder(name);
+    combinedInfo.textContent = `加载 ${name}...`;
+    bboxInfo.textContent = '';
+    combined = []; bboxMap = new Map(); bboxStepsSorted = []; idx = 0; stop();
+    try {
+      const base = `${ROOT}/${encodeURIComponent(name)}`;
+      const links = await listDirectory(`${base}/`);
+      const { cList, bMap, bSteps } = parseFiles(links, base);
+      combined = cList;
+      bboxMap = bMap;
+      bboxStepsSorted = bSteps;
+
+      // 更新计数
+      [...folderList.children].forEach(li => {
+        if (li.firstChild.nodeValue === name) {
+          li.querySelector('.badge').textContent = `${combined.length}C / ${bboxMap.size}B`;
+        }
+      });
+
+      if (!combined.length) {
+        combinedInfo.textContent = `目录 ${name} 中没有 combined_stepXXXX.*`;
+        combinedStatus.textContent = '0 / 0';
+        combinedImg.removeAttribute('src');
+        bboxImg.removeAttribute('src');
+        bboxInfo.textContent = '无 bbox';
+        bboxStatus.textContent = '';
+      } else {
+        show(0);
+      }
+    } catch (e) {
+      console.error(e);
+      combinedInfo.textContent = `读取失败：${e.message}`;
+      combinedImg.removeAttribute('src');
+      bboxImg.removeAttribute('src');
+      bboxInfo.textContent = '';
+      combinedStatus.textContent = '0 / 0';
+      bboxStatus.textContent = '';
+    }
+  }
+
+  function applyFitMode(imgEl, imgObj) {
+    if (fitMode === 'contain') {
+      imgEl.style.objectFit = 'contain';
+      imgEl.style.width = 'auto';
+      imgEl.style.height = 'auto';
+      imgEl.style.imageRendering = 'auto';
+    } else if (fitMode === 'cover') {
+      imgEl.style.objectFit = 'cover';
+      imgEl.style.width = '100%';
+      imgEl.style.height = '100%';
+      imgEl.style.imageRendering = 'auto';
+    } else if (fitMode === 'native') {
+      imgEl.style.objectFit = 'contain';
+      imgEl.style.width = imgObj.naturalWidth + 'px';
+      imgEl.style.height = 'auto';
+      imgEl.style.imageRendering = 'pixelated';
+    }
+  }
+
+  // 二分查找：在已排序的 bboxStepsSorted 中找到 <= step 的最大元素
+  function findLeStep(step) {
+    const arr = bboxStepsSorted;
+    let lo = 0, hi = arr.length - 1, ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (arr[mid] <= step) { ans = arr[mid]; lo = mid + 1; }
+      else { hi = mid - 1; }
+    }
+    return ans; // -1 代表没有 <= step 的 bbox
+  }
+
+  async function show(i) {
+    if (!combined.length) return;
+    idx = (i + combined.length) % combined.length;
+    const { step, url } = combined[idx];
+
+    // Combined
+    try {
+      const cimg = await loadImage(url);
+      applyFitMode(combinedImg, cimg);
+      combinedImg.src = cimg.src;
+      combinedInfo.textContent = `${decodeURIComponent(url)} (step ${step})`;
+      combinedStatus.textContent = `${idx + 1} / ${combined.length}`;
+      // 预取下一张 combined
+      const nextIdx = (idx + 1) % combined.length;
+      if (nextIdx !== idx) {
+        const nurl = combined[nextIdx].url;
+        if (!cacheImg.has(nurl)) loadImage(nurl).catch(()=>{});
+      }
+    } catch (e) {
+      combinedInfo.textContent = e.message;
+      combinedImg.removeAttribute('src');
+      combinedStatus.textContent = `${idx + 1} / ${combined.length}`;
+    }
+
+    // BBox：优先同 step；否则回退到 <= step 的最近 step
+    let bstep = step;
+    let burl = bboxMap.get(bstep);
+    if (!burl) {
+      bstep = findLeStep(step);
+      burl = bstep >= 0 ? bboxMap.get(bstep) : undefined;
+    }
+    if (burl) {
+      try {
+        const bimg = await loadImage(burl);
+        applyFitMode(bboxImg, bimg);
+        bboxImg.src = bimg.src;
+        if (bstep === step) {
+          bboxInfo.textContent = `${decodeURIComponent(burl)} (匹配 step ${step})`;
+        } else {
+          bboxInfo.textContent = `${decodeURIComponent(burl)} (回退至 step ${bstep})`;
+        }
+        bboxStatus.textContent = `${bimg.naturalWidth}×${bimg.naturalHeight}`;
+        // 预取下一帧 bbox（按同样规则）
+        const nextStep = combined[(idx + 1) % combined.length].step;
+        const nextBstep = bboxMap.has(nextStep) ? nextStep : findLeStep(nextStep);
+        const nburl = nextBstep >= 0 ? bboxMap.get(nextBstep) : undefined;
+        if (nburl && !cacheImg.has(nburl)) loadImage(nburl).catch(()=>{});
+      } catch (e) {
+        bboxImg.removeAttribute('src');
+        bboxInfo.textContent = `加载 bbox 失败：${e.message}`;
+        bboxStatus.textContent = '';
+      }
+    } else {
+      bboxImg.removeAttribute('src');
+      bboxInfo.textContent = `step ${step} 之前无可用 bbox`;
+      bboxStatus.textContent = '';
+    }
+  }
+
+  function prev() { show(idx - 1); }
+  function next() {
+    if (!combined.length) return;
+    if (idx === combined.length - 1 && !loopChk.checked) { stop(); return; }
+    show(idx + 1);
+  }
+
+  function play() {
+    if (playing || !combined.length) return;
+    playing = true; playBtn.textContent = '⏸'; schedule();
+  }
+  function stop() {
+    playing = false; playBtn.textContent = '▶';
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+  function togglePlay() { playing ? stop() : play(); }
+  function schedule() {
+    if (!playing) return;
+    const fps = parseInt(fpsInput.value, 10) || 10;
+    const interval = 1000 / fps;
+    timer = setTimeout(() => { next(); schedule(); }, interval);
+  }
+
+  // events
+  prevBtn.addEventListener('click', prev);
+  nextBtn.addEventListener('click', next);
+  playBtn.addEventListener('click', togglePlay);
+  fpsInput.addEventListener('input', () => {
+    fpsLabel.textContent = `${fpsInput.value} fps`;
+    if (playing) { stop(); play(); }
+  });
+  loopChk.addEventListener('change', () => {});
+  fitModeSel.addEventListener('change', () => {
+    fitMode = fitModeSel.value;
+    // 立即应用到当前两侧图像
+    const cur = combined[idx];
+    if (cur) {
+      const cimg = cacheImg.get(cur.url);
+      if (cimg) applyFitMode(combinedImg, cimg);
+      // 右侧按当前显示的图重新应用
+      if (bboxImg.src) {
+        // 尝试从缓存取当前 src 对应对象（不一定有）
+        // 若无则忽略，因为样式已设置到元素
+      }
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    if (e.key.toLowerCase() === 'l') { loopChk.checked = !loopChk.checked; }
+    if (e.key === '+' || e.key === '=') { fpsInput.value = String(Math.min(60, Number(fpsInput.value)+1)); fpsInput.dispatchEvent(new Event('input')); }
+    if (e.key === '-' || e.key === '_') { fpsInput.value = String(Math.max(1, Number(fpsInput.value)-1)); fpsInput.dispatchEvent(new Event('input')); }
+  });
+
+  // init
+  fpsLabel.textContent = `${fpsInput.value} fps`;
+  scanFolders();
+})();
+</script>
+</body>
+</html>
