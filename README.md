@@ -6,8 +6,9 @@
 - [x] Evaluation Code
     - [x] R2R-CE
     - [x] RxR-CE
+- [x] Real-world Deployment Code（Agilex Cobot Magic & Unitree Go1）
 - [ ] Docker Environment Setup
-- [x] Real-world Deployment Code（Cobot Magic & Unitree Go1）
+
 
 ## Environment Setup
 
