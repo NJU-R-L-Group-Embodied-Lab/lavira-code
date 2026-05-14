@@ -1,0 +1,11 @@
+openai
+numpy
+Pillow
+opencv-python
+cv-bridge
+simplejpeg
+faster-whisper
+Flask
+Flask-SocketIO
+gevent
+gevent-websocket

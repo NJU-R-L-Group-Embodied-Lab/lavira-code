@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local credentials / models
+.env
+cert.pem
+key.pem
+models/
+
+# Runtime artefacts produced by main.py (timestamped output dirs)
+20*-*/
+temp_audio.webm
+
+# Internal tooling
+.claude/

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unitree Go1 LaViRA VLN Demo</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f0f2f5; margin: 0; padding: 20px; box-sizing: border-box; }
+        h1 { color: #333; }
+        #video-container { border: 2px solid #ccc; border-radius: 8px; margin-bottom: 20px; max-width: 90vw; max-height: 50vh; overflow: hidden; background-color: #000; }
+        #video-stream { width: 100%; height: auto; display: block; }
+        #status-box { width: 100%; max-width: 800px; min-height: 80px; max-height: 250px; background-color: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-sizing: border-box; overflow-y: auto; }
+        .control-row { width: 100%; max-width: 800px; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        input[type=text] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1em; }
+        button { padding: 10px 16px; border: none; border-radius: 6px; background-color: #007bff; color: white; font-size: 1em; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        #record-button { width: 150px; height: 150px; border-radius: 50%; background-color: #007bff; color: white; font-size: 1em; display: flex; justify-content: center; align-items: center; text-align: center; -webkit-tap-highlight-color: transparent; user-select: none; margin-top: 10px; }
+        #record-button.recording { background-color: #dc3545; }
+        .status-message { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #eee; word-wrap: break-word; }
+        .status-message:last-child { border-bottom: none; }
+        .status-message.error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <h1>Unitree Go1 LaViRA VLN Demo</h1>
+    <div id="video-container">
+        <img id="video-stream" src="{{ url_for('video_feed') }}" alt="Live stream">
+    </div>
+
+    <div id="status-box">
+        <div class="status-message">Welcome! Type a VLN instruction or hold the button to speak.</div>
+    </div>
+
+    <div class="control-row">
+        <input id="instruction-input" type="text" placeholder='VLN instruction (e.g. "find a blue robot dog")' />
+        <button id="send-text">Send</button>
+    </div>
+
+    <button id="record-button">Press &amp; Hold<br>to Speak</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const socketURL = `${protocol}//${window.location.hostname}:${window.location.port || 5000}`;
+
+            const socket = io(socketURL, {
+                reconnection: true,
+                reconnectionAttempts: 10,
+                reconnectionDelay: 2000,
+                timeout: 20000,
+            });
+
+            const instructionInput = document.getElementById("instruction-input");
+            const sendTextButton = document.getElementById("send-text");
+            const recordButton = document.getElementById("record-button");
+            const statusBox = document.getElementById("status-box");
+
+            socket.on("connect",    () => addStatusMessage("Connected to robot."));
+            socket.on("disconnect", () => addStatusMessage("Disconnected. Reconnecting...", "error"));
+            socket.on("response",   (d) => { addStatusMessage(`Robot: ${d.message}`); speak(d.message); });
+            socket.on("status_update", (d) => addStatusMessage(`Status: ${d.message}`));
+
+            const sendInstruction = () => {
+                const instruction = instructionInput.value.trim();
+                if (!instruction) {
+                    addStatusMessage("Please type an instruction first.", "error");
+                    return;
+                }
+                socket.emit("text_command", { instruction });
+                addStatusMessage(`Sending VLN task: ${instruction}`);
+            };
+            sendTextButton.addEventListener("click", sendInstruction);
+            instructionInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") sendInstruction();
+            });
+
+            // Voice recording
+            let mediaRecorder;
+            let audioChunks = [];
+            const stopRecording = () => {
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    mediaRecorder.stop();
+                    recordButton.classList.remove("recording");
+                    recordButton.innerHTML = "Press &amp; Hold<br>to Speak";
+                }
+            };
+            const sendAudio = () => {
+                if (!socket.connected) {
+                    addStatusMessage("Connection lost; command not sent.", "error");
+                    audioChunks = [];
+                    return;
+                }
+                if (audioChunks.length > 0) {
+                    socket.emit("audio_command", new Blob(audioChunks, { type: "audio/webm" }));
+                    addStatusMessage("Sending voice command...");
+                }
+                audioChunks = [];
+            };
+            const setupMediaRecorder = (stream) => {
+                mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+                mediaRecorder.addEventListener("dataavailable", (e) => audioChunks.push(e.data));
+                mediaRecorder.addEventListener("stop", sendAudio);
+                mediaRecorder.start();
+                recordButton.classList.add("recording");
+                recordButton.innerHTML = "Recording...";
+            };
+            const startRecording = () => {
+                if (!socket.connected) {
+                    addStatusMessage("Not connected; please wait.", "error");
+                    return;
+                }
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(setupMediaRecorder)
+                    .catch((err) => addStatusMessage(`Microphone error: ${err.message}`, "error"));
+            };
+
+            recordButton.addEventListener("mousedown", startRecording);
+            recordButton.addEventListener("mouseup", stopRecording);
+            recordButton.addEventListener("mouseleave", stopRecording);
+            recordButton.addEventListener("touchstart", (e) => { e.preventDefault(); startRecording(); });
+            recordButton.addEventListener("touchend", stopRecording);
+
+            function addStatusMessage(message, type = "info") {
+                const el = document.createElement("div");
+                el.className = "status-message" + (type === "error" ? " error" : "");
+                el.textContent = message;
+                statusBox.appendChild(el);
+                statusBox.scrollTop = statusBox.scrollHeight;
+            }
+
+            function speak(text) {
+                if ("speechSynthesis" in window) {
+                    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+                }
+            }
+        });
+    </script>
+</body>
+</html>

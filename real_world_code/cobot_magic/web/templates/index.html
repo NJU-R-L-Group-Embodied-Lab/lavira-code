@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Control</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f0f2f5; margin: 0; padding: 20px; box-sizing: border-box; }
+        h1 { color: #333; }
+        #video-container { border: 2px solid #ccc; border-radius: 8px; margin-bottom: 20px; max-width: 90vw; max-height: 60vh; overflow: hidden; background-color: #000; }
+        #video-stream { width: 100%; height: auto; display: block; }
+        #status-box { width: 100%; max-width: 800px; min-height: 80px; background-color: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-sizing: border-box; overflow-y: auto; }
+        #record-button { width: 150px; height: 150px; border-radius: 50%; border: none; background-color: #007bff; color: white; font-size: 1.2em; cursor: pointer; transition: background-color 0.3s; display: flex; justify-content: center; align-items: center; text-align: center; -webkit-tap-highlight-color: transparent; user-select: none; }
+        #record-button.recording { background-color: #dc3545; }
+        .status-message { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #eee; word-wrap: break-word; }
+        .status-message:last-child { border-bottom: none; }
+    </style>
+</head>
+<body>
+    <h1>Robot Vision</h1>
+    <div id="video-container">
+        <!-- The video stream URL is correctly handled by Flask's url_for -->
+        <img id="video-stream" src="{{ url_for('video_feed') }}" alt="Live Stream">
+    </div>
+
+    <div id="status-box">
+        <div class="status-message">Welcome! Press and hold the button to give a voice command.</div>
+    </div>
+
+    <button id="record-button">Press & Hold<br>to Speak</button>
+
+    <!-- Using Socket.IO library from a CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // --- WebSocket Connection Setup ---
+            const protocol = window.location.protocol;
+            const socketProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
+            const socketURL = `${socketProtocol}//${window.location.hostname}:5000`;
+            console.log("Attempting to connect to WebSocket at:", socketURL);
+
+            // --- KEY CHANGE: Added connection options for robustness ---
+            const socket = io(socketURL, {
+                reconnection: true,              // Ensure auto-reconnect is enabled (default)
+                reconnectionAttempts: 10,        // Try to reconnect up to 10 times
+                reconnectionDelay: 2000,         // Wait 2 seconds between attempts
+                timeout: 20000                   // Consider the connection timed out after 20 seconds
+            });
+
+            const recordButton = document.getElementById('record-button');
+            const statusBox = document.getElementById('status-box');
+
+            let mediaRecorder;
+            let audioChunks = [];
+
+            // --- WebSocket Event Listeners ---
+            socket.on('connect', () => {
+                addStatusMessage('Connected to Robot!');
+            });
+
+            socket.on('disconnect', () => {
+                addStatusMessage('Disconnected from Robot. Attempting to reconnect...', 'error');
+            });
+
+            socket.on('response', (data) => {
+                addStatusMessage(`Robot: ${data.message}`);
+                speak(data.message); // Optional: text-to-speech response
+            });
+
+            socket.on('status_update', (data) => {
+                addStatusMessage(`Status: ${data.message}`);
+            });
+
+            // --- Voice Recording Logic (Revised for Robustness) ---
+
+            const stopRecording = () => {
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    mediaRecorder.stop();
+                    recordButton.classList.remove('recording');
+                    recordButton.innerHTML = "Press & Hold<br>to Speak";
+                }
+            };
+
+            const sendAudio = () => {
+                if (!socket.connected) {
+                    addStatusMessage("Connection lost. Command not sent. Please try again.", "error");
+                    audioChunks = [];
+                    return;
+                }
+
+                if (audioChunks.length > 0) {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    socket.emit('audio_command', audioBlob);
+                    addStatusMessage("Sending voice command...");
+                }
+                audioChunks = [];
+            };
+
+            const setupMediaRecorder = (stream) => {
+                const options = { mimeType: 'audio/webm' };
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.addEventListener("dataavailable", event => {
+                    audioChunks.push(event.data);
+                });
+
+                mediaRecorder.addEventListener("stop", sendAudio);
+
+                mediaRecorder.start();
+                recordButton.classList.add('recording');
+                recordButton.innerHTML = "Recording...";
+            };
+
+            const startRecording = () => {
+                if (!socket.connected) {
+                    addStatusMessage("Not connected to the robot. Please wait for connection.", "error");
+                    return;
+                }
+
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(setupMediaRecorder)
+                    .catch(err => {
+                        console.error("Error accessing microphone:", err);
+                        addStatusMessage(`Error accessing microphone: ${err.message}`, 'error');
+                    });
+            };
+
+            // --- Event Listeners for the Button ---
+            recordButton.addEventListener('mousedown', startRecording);
+            recordButton.addEventListener('mouseup', stopRecording);
+            recordButton.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+            recordButton.addEventListener('touchend', stopRecording);
+            recordButton.addEventListener('mouseleave', stopRecording);
+
+            // --- Utility Functions ---
+            function addStatusMessage(message, type = 'info') {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'status-message';
+                messageElement.textContent = message;
+                if (type === 'error') {
+                    messageElement.style.color = 'red';
+                }
+                statusBox.appendChild(messageElement);
+                statusBox.scrollTop = statusBox.scrollHeight;
+            }
+
+            function speak(text) {
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    window.speechSynthesis.speak(utterance);
+                } else {
+                    addStatusMessage("Text-to-speech not supported in this browser.", "error");
+                }
+            }
+        });
+    </script>
+</body>
+</html>

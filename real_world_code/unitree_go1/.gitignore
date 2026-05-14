@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local credentials / models
+.env
+cert.pem
+key.pem
+models/
+
+# Runtime outputs (session dirs, debug images, temp audio)
+outputs/
+temp_audio.webm
+
+# ROS build artefacts (if you build this as a catkin pkg)
+build/
+devel/
+
+# Internal tooling
+.claude/

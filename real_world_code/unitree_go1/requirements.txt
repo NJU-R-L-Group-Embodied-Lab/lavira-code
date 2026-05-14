@@ -1,0 +1,13 @@
+openai>=1.0
+numpy
+opencv-python
+Pillow
+requests
+colorama
+faster-whisper
+Flask
+Flask-SocketIO
+gevent
+gevent-websocket
+# ROS-side dependencies (cv_bridge / rospy) are typically provided by your
+# catkin / system ROS install rather than via pip.

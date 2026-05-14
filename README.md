@@ -7,7 +7,7 @@
     - [x] R2R-CE
     - [x] RxR-CE
 - [ ] Docker Environment Setup
-- [ ] Real-world Deployment Code（Aloha & Go1）
+- [x] Real-world Deployment Code（Aloha & Go1）
 
 ## Environment Setup
 
