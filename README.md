@@ -7,7 +7,7 @@
     - [x] R2R-CE
     - [x] RxR-CE
 - [ ] Docker Environment Setup
-- [x] Real-world Deployment Code（Aloha & Go1）
+- [x] Real-world Deployment Code（Cobot Magic & Unitree Go1）
 
 ## Environment Setup
 
