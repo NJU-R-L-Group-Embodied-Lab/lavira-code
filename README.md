@@ -7,7 +7,7 @@
     - [x] R2R-CE
     - [x] RxR-CE
 - [x] Real-world Deployment Code（Agilex Cobot Magic & Unitree Go1）
-- [ ] Docker Environment Setup
+- [x] Docker Environment Setup
 
 
 ## Environment Setup
