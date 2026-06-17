@@ -1,6 +1,14 @@
 
 
 # [ICRA 2026] LaViRA: Language-Vision-Robot Actions Translation for Zero-Shot Vision-and-Language Navigation in Continuous Environments
+
+## News
+**Uni-LaViRA has been released!** 🎉
+
+- **Paper:** [arXiv:2605.27582](https://arxiv.org/abs/2605.27582)
+- **Code:** [https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code](https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code)
+
+
 ## TODO List
 - [x] Conda Environment Setup
 - [x] Evaluation Code
